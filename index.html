@@ -183,9 +183,9 @@
         const JUMP_STRENGTH = 1.0;
 
         // Chip shot variables
-        let lastP1ShootTime = 0;
-        let lastP2ShootTime = 0;
-        const DOUBLE_TAP_TIME = 300; // Time in ms for a double tap
+        let p1ShootKeyDownTime = 0;
+        let p2ShootKeyDownTime = 0;
+        const TAP_DURATION = 200; // A tap is a press shorter than 200ms
         const CHIP_LIFT_STRENGTH = 1.5;
         const CHIP_FORWARD_STRENGTH = 0.5;
 
@@ -420,17 +420,11 @@
             
             if (key === 'l' || key === 'k') {
                 if (ballHolder === 'player1') {
-                    const currentTime = new Date().getTime();
-                    // Check if the time since the last press is short enough for a double tap
-                    if (currentTime - lastP1ShootTime < DOUBLE_TAP_TIME) {
-                        chipShot(player1, lastPlayer1Direction);
-                        lastP1ShootTime = 0; // Reset time to prevent triple taps
-                        shootingPower1 = 0; // Cancel any charged shot
-                        hidePowerMeter(powerMeter1);
-                        return; // Stop further execution to prevent charging a shot
+                    // On the very first press, record the time and start charging power.
+                    if (!pressedKeys[key]) {
+                        p1ShootKeyDownTime = new Date().getTime();
+                        shootingPower1 = 1; // Start with minimum power.
                     }
-                    lastP1ShootTime = currentTime; // Log the time of this press
-
                     shootingPower1 = Math.min(shootingPower1 + POWER_CHARGE_RATE, MAX_POWER);
                     updatePowerMeter(player1, powerMeter1, shootingPower1);
                 } else if (ballHolder === 'player2' && player1.position.distanceTo(player2.position) < TACKLE_DISTANCE) {
@@ -441,17 +435,11 @@
             
             if (key === 'f' || key === 'g') {
                 if (ballHolder === 'player2') {
-                    const currentTime = new Date().getTime();
-                    // Check for double tap for Player 2
-                    if (currentTime - lastP2ShootTime < DOUBLE_TAP_TIME) {
-                        chipShot(player2, lastPlayer2Direction);
-                        lastP2ShootTime = 0; // Reset time
-                        shootingPower2 = 0; // Cancel charged shot
-                        hidePowerMeter(powerMeter2);
-                        return; // Stop further execution
+                    // On the very first press, record the time and start charging power.
+                    if (!pressedKeys[key]) {
+                        p2ShootKeyDownTime = new Date().getTime();
+                        shootingPower2 = 1; // Start with minimum power.
                     }
-                    lastP2ShootTime = currentTime; // Log time
-
                     shootingPower2 = Math.min(shootingPower2 + POWER_CHARGE_RATE, MAX_POWER);
                     updatePowerMeter(player2, powerMeter2, shootingPower2);
                 } else if (ballHolder === 'player1' && player2.position.distanceTo(player1.position) < TACKLE_DISTANCE) {
@@ -469,14 +457,28 @@
             
             if (key === 'l' || key === 'k') {
                 if (ballHolder === 'player1') {
-                    shootBall(player1, shootingPower1, lastPlayer1Direction);
+                    const pressDuration = new Date().getTime() - p1ShootKeyDownTime;
+                    
+                    // Check if the key press was a quick tap or a hold.
+                    if (pressDuration < TAP_DURATION) {
+                        chipShot(player1, lastPlayer1Direction);
+                    } else {
+                        shootBall(player1, shootingPower1, lastPlayer1Direction);
+                    }
                     shootingPower1 = 0;
                     hidePowerMeter(powerMeter1);
                 }
             }
             if (key === 'f' || key === 'g') {
                 if (ballHolder === 'player2') {
-                    shootBall(player2, shootingPower2, lastPlayer2Direction);
+                    const pressDuration = new Date().getTime() - p2ShootKeyDownTime;
+                    
+                    // Check for tap vs. hold for Player 2.
+                    if (pressDuration < TAP_DURATION) {
+                        chipShot(player2, lastPlayer2Direction);
+                    } else {
+                        shootBall(player2, shootingPower2, lastPlayer2Direction);
+                    }
                     shootingPower2 = 0;
                     hidePowerMeter(powerMeter2);
                 }
@@ -854,3 +856,6 @@
     </script>
 </body>
 </html>
+
+
+
