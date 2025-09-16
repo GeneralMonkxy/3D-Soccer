@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Soccer Game ⚽</title>
+    <title>3D Soccer Game</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.min.js"></script>
     <style>
         body {
             margin: 0;
@@ -154,7 +153,6 @@
     <div class="controls">
         <button id="startButton">Play</button>
         <button id="restartButton">Restart</button>
-        <button id="muteButton">Mute</button>
     </div>
     <div class="instructions">
         <h3>How to Play</h3>
@@ -184,6 +182,13 @@
         const POWER_CHARGE_RATE = 1;
         const JUMP_STRENGTH = 1.0;
 
+        // Chip shot variables
+        let lastP1ShootTime = 0;
+        let lastP2ShootTime = 0;
+        const DOUBLE_TAP_TIME = 300; // Time in ms for a double tap
+        const CHIP_LIFT_STRENGTH = 1.5;
+        const CHIP_FORWARD_STRENGTH = 0.5;
+
         // Three.js setup
         let scene, camera, renderer, player1, player2, ball, goalkeeper1, goalkeeper2;
         let pressedKeys = {};
@@ -194,11 +199,6 @@
         let goalkeeper1Direction = 1;
         let goalkeeper2Direction = 1;
         
-        // Sound Effects
-        let kickSound, goalCheer, whistleSound, bounceSound, kickDrum, snareDrum, hiHat;
-        let gameBeat;
-        let areSoundsReady = false;
-
         // Motion trail variables
         const trailVertices = [];
         const trailMaterial = new THREE.LineBasicMaterial({
@@ -213,8 +213,6 @@
             init();
             setupControls();
             animate();
-            waitForSounds(); // Wait for Tone.js to load before allowing play
-            window.addEventListener('resize', resizeCanvas); // Listen for window resize
             resizeCanvas();
         };
 
@@ -294,68 +292,6 @@
             scene.add(trailLine);
 
             updateScoreDisplay();
-            // Sounds will be set up on first click
-        }
-
-        function setupSounds() {
-            if (areSoundsReady) return; // Don't run this more than once
-
-            // Kick sound
-            kickSound = new Tone.MembraneSynth({
-                pitchDecay: 0.05,
-                octaves: 10,
-                oscillator: { type: "sine" },
-                envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4, attackCurve: "exponential" }
-            }).toDestination();
-
-            // Goal cheer sound (a happy chord)
-            goalCheer = new Tone.PolySynth(Tone.Synth, {
-                oscillator: { type: "fatsawtooth" },
-                envelope: { attack: 0.1, decay: 0.2, sustain: 0.5, release: 1 }
-            }).toDestination();
-            goalCheer.volume.value = -6; // Lower volume slightly
-
-            // Whistle sound (quick pitch slide)
-            whistleSound = new Tone.Synth({
-                oscillator: { type: "triangle" },
-                envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.2 }
-            }).toDestination();
-
-            // Ball bounce sound
-            bounceSound = new Tone.MembraneSynth({
-                pitchDecay: 0.01,
-                octaves: 2,
-                envelope: { attack: 0.001, decay: 0.1, sustain: 0 }
-            }).toDestination();
-            bounceSound.volume.value = -10;
-
-            // Energetic Beat Synths
-            kickDrum = new Tone.MembraneSynth().toDestination();
-            snareDrum = new Tone.NoiseSynth({
-                noise: { type: "white" },
-                envelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.1 }
-            }).toDestination();
-            hiHat = new Tone.MetalSynth({
-                frequency: 200,
-                envelope: { attack: 0.001, decay: 0.05, release: 0.01 },
-                harmonicity: 5.1,
-                modulationIndex: 32,
-                resonance: 4000,
-                octaves: 1.5
-            }).toDestination();
-            hiHat.volume.value = -12;
-
-            // Create the looping beat
-            gameBeat = new Tone.Loop((time) => {
-                kickDrum.triggerAttackRelease("C1", "8n", time);
-                snareDrum.triggerAttackRelease("4n", time + Tone.Time("4n").toSeconds());
-                hiHat.triggerAttack("8n", time);
-                hiHat.triggerAttack("8n", time + Tone.Time("8t").toSeconds());
-                hiHat.triggerAttack("8n", time + Tone.Time("4n").toSeconds());
-                hiHat.triggerAttack("8n", time + Tone.Time("4n").toSeconds() + Tone.Time("8t").toSeconds());
-            }, "2n").start(0);
-            
-            Tone.Transport.bpm.value = 140;
         }
 
         function createPlayer(bodyColor, headColor) {
@@ -474,7 +410,6 @@
         function setupControls() {
             document.getElementById('startButton').addEventListener('click', toggleGame);
             document.getElementById('restartButton').addEventListener('click', restartGame);
-            document.getElementById('muteButton').addEventListener('click', toggleMute);
             document.addEventListener('keydown', handleKeyDown);
             document.addEventListener('keyup', handleKeyUp);
         }
@@ -485,6 +420,17 @@
             
             if (key === 'l' || key === 'k') {
                 if (ballHolder === 'player1') {
+                    const currentTime = new Date().getTime();
+                    // Check for double tap
+                    if (currentTime - lastP1ShootTime < DOUBLE_TAP_TIME) {
+                        chipShot(player1, lastPlayer1Direction);
+                        lastP1ShootTime = 0; // Reset time to prevent triple taps etc.
+                        shootingPower1 = 0; // Cancel any charged shot
+                        hidePowerMeter(powerMeter1);
+                        return; // Exit function after chip shot
+                    }
+                    lastP1ShootTime = currentTime;
+
                     shootingPower1 = Math.min(shootingPower1 + POWER_CHARGE_RATE, MAX_POWER);
                     updatePowerMeter(player1, powerMeter1, shootingPower1);
                 } else if (ballHolder === 'player2' && player1.position.distanceTo(player2.position) < TACKLE_DISTANCE) {
@@ -495,6 +441,17 @@
             
             if (key === 'f' || key === 'g') {
                 if (ballHolder === 'player2') {
+                    const currentTime = new Date().getTime();
+                    // Check for double tap
+                    if (currentTime - lastP2ShootTime < DOUBLE_TAP_TIME) {
+                        chipShot(player2, lastPlayer2Direction);
+                        lastP2ShootTime = 0; // Reset time
+                        shootingPower2 = 0; // Cancel any charged shot
+                        hidePowerMeter(powerMeter2);
+                        return; // Exit function after chip shot
+                    }
+                    lastP2ShootTime = currentTime;
+
                     shootingPower2 = Math.min(shootingPower2 + POWER_CHARGE_RATE, MAX_POWER);
                     updatePowerMeter(player2, powerMeter2, shootingPower2);
                 } else if (ballHolder === 'player1' && player2.position.distanceTo(player1.position) < TACKLE_DISTANCE) {
@@ -545,12 +502,26 @@
             ball.velocity.copy(shotDirection).multiplyScalar(kickStrength);
             ball.velocity.y = kickUpward;
 
-            kickSound.triggerAttackRelease("C2", "8n", Tone.now());
-
             const sideForce = new THREE.Vector3();
             const crossVector = new THREE.Vector3().crossVectors(shotDirection, new THREE.Vector3(0, 1, 0));
             sideForce.copy(crossVector).multiplyScalar(normalizedPower * 0.05);
             ball.curveForce = sideForce;
+        }
+
+        function chipShot(player, direction) {
+            ballHolder = null; // Player no longer holds the ball
+
+            let chipDirection = new THREE.Vector3();
+            if (direction.length() > 0) {
+                chipDirection.copy(direction).normalize();
+            } else {
+                // If player is standing still, chip towards the opponent's goal
+                chipDirection.set(0, 0, -1).applyQuaternion(player.quaternion);
+            }
+            
+            // Give the ball a gentle lift and forward push
+            ball.velocity.copy(chipDirection).multiplyScalar(CHIP_FORWARD_STRENGTH);
+            ball.velocity.y = CHIP_LIFT_STRENGTH;
         }
 
         function updatePowerMeter(player, meter, power) {
@@ -572,18 +543,6 @@
 
         function hidePowerMeter(meter) {
             meter.style.display = 'none';
-        }
-
-        function toggleMute() {
-            // Only allows muting after sounds have been initialized by the first "Play" click.
-            if (!areSoundsReady) return; 
-            
-            const muteButton = document.getElementById('muteButton');
-            // Toggle the master mute for all sounds.
-            Tone.Destination.mute = !Tone.Destination.mute;
-            
-            // Update the button text to reflect the new state.
-            muteButton.textContent = Tone.Destination.mute ? "Unmute" : "Mute";
         }
 
         function updateScoreDisplay() {
@@ -685,7 +644,6 @@
                 if (ball.position.y < 0.75) {
                     ball.position.y = 0.75;
                     ball.velocity.y *= -0.5;
-                    bounceSound.triggerAttackRelease("G1", "16n");
                 }
 
                 trailVertices.push(ball.position.clone());
@@ -757,7 +715,6 @@
                 }
 
                 blueScore++;
-                goalCheer.triggerAttackRelease(["C4", "E4", "G4"], "1n");
                 document.getElementById('message').innerHTML = `<span class="blue-score">Player 1 Scores!</span>`;
                 updateScoreDisplay();
                 isGoalScored = true;
@@ -781,7 +738,6 @@
                 }
 
                 redScore++;
-                goalCheer.triggerAttackRelease(["C4", "E4", "G4"], "1n");
                 document.getElementById('message').innerHTML = `<span class="red-score">Player 2 Scores!</span>`;
                 updateScoreDisplay();
                 isGoalScored = true;
@@ -830,34 +786,18 @@
 
             clearInterval(timerInterval);
             isGameStarted = false;
-            Tone.Transport.stop(); // Stop the beat
             document.getElementById('startButton').textContent = "Play";
             document.getElementById('timer-display').textContent = 90;
         }
 
-        async function toggleGame() {
-            if (!areSoundsReady) {
-                // Tone.start() returns a Promise that resolves when the AudioContext is running.
-                // Awaiting it pauses the function here until the audio is completely ready.
-                await Tone.start();
-                setupSounds();
-                areSoundsReady = true;
-            }
-
+        function toggleGame() {
             if (!isGameStarted) {
-                // The transport (for the beat) can now be safely started.
-                Tone.Transport.start();
-                whistleSound.triggerAttackRelease("G5", "16n", Tone.now());
-                whistleSound.frequency.rampTo("C6", 0.1, Tone.now() + 0.05);
-
                 isGameStarted = true;
                 document.getElementById('startButton').textContent = "Pause";
                 document.getElementById('message').textContent = "";
                 startTimer();
             } else {
-                // If the game is already started, we just pause it.
                 isGameStarted = false;
-                Tone.Transport.pause(); // Pause the beat
                 document.getElementById('startButton').textContent = "Resume";
                 clearInterval(timerInterval);
             }
@@ -877,54 +817,36 @@
         function endGame() {
             isGameOver = true;
             clearInterval(timerInterval);
-            Tone.Transport.stop(); // Stop the beat completely
-            whistleSound.triggerAttackRelease("C6", "2n");
             let message = "";
             if (blueScore > redScore) {
                 message = `<span class="blue-score">Player 1 Wins!</span>`;
             } else if (redScore > blueScore) {
                 message = `<span class="red-score">Player 2 Wins!</span>`;
             } else {
-                message = "It's a Draw!";
+                message = `It's a draw!`;
             }
-            document.getElementById('message').innerHTML = `<h2>Game Over!</h2><p>${message}</p>`;
-        }
-
-        function waitForSounds() {
-            const startButton = document.getElementById('startButton');
-            startButton.disabled = true;
-            startButton.textContent = "Loading Audio...";
-
-            const soundCheckInterval = setInterval(() => {
-                if (typeof Tone !== 'undefined' && Tone.loaded) {
-                    clearInterval(soundCheckInterval);
-                    startButton.disabled = false;
-                    startButton.textContent = "Play";
-                }
-            }, 100);
-        }
-
-        function resizeCanvas() {
-            const container = document.querySelector('.game-container');
-            if (container) {
-                camera.aspect = container.clientWidth / container.clientHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(container.clientWidth, container.clientHeight);
-            }
+            document.getElementById('message').innerHTML = `Game Over!<br>${message}<br>${blueScore} - ${redScore}`;
+            document.getElementById('startButton').textContent = "Play Again";
         }
 
         function animate() {
             requestAnimationFrame(animate);
-
-            if (isGameStarted && !isGoalScored && !isGameOver) {
+            if (isGameStarted && !isGameOver) {
                 handleInput();
                 updatePhysics();
                 checkScoring();
             }
-
             renderer.render(scene, camera);
         }
 
+        function resizeCanvas() {
+            const canvas = document.getElementById('game-canvas');
+            camera.aspect = canvas.clientWidth / canvas.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
     </script>
 </body>
 </html>
