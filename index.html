@@ -421,15 +421,15 @@
             if (key === 'l' || key === 'k') {
                 if (ballHolder === 'player1') {
                     const currentTime = new Date().getTime();
-                    // Check for double tap
+                    // Check if the time since the last press is short enough for a double tap
                     if (currentTime - lastP1ShootTime < DOUBLE_TAP_TIME) {
                         chipShot(player1, lastPlayer1Direction);
-                        lastP1ShootTime = 0; // Reset time to prevent triple taps etc.
+                        lastP1ShootTime = 0; // Reset time to prevent triple taps
                         shootingPower1 = 0; // Cancel any charged shot
                         hidePowerMeter(powerMeter1);
-                        return; // Exit function after chip shot
+                        return; // Stop further execution to prevent charging a shot
                     }
-                    lastP1ShootTime = currentTime;
+                    lastP1ShootTime = currentTime; // Log the time of this press
 
                     shootingPower1 = Math.min(shootingPower1 + POWER_CHARGE_RATE, MAX_POWER);
                     updatePowerMeter(player1, powerMeter1, shootingPower1);
@@ -442,15 +442,15 @@
             if (key === 'f' || key === 'g') {
                 if (ballHolder === 'player2') {
                     const currentTime = new Date().getTime();
-                    // Check for double tap
+                    // Check for double tap for Player 2
                     if (currentTime - lastP2ShootTime < DOUBLE_TAP_TIME) {
                         chipShot(player2, lastPlayer2Direction);
                         lastP2ShootTime = 0; // Reset time
-                        shootingPower2 = 0; // Cancel any charged shot
+                        shootingPower2 = 0; // Cancel charged shot
                         hidePowerMeter(powerMeter2);
-                        return; // Exit function after chip shot
+                        return; // Stop further execution
                     }
-                    lastP2ShootTime = currentTime;
+                    lastP2ShootTime = currentTime; // Log time
 
                     shootingPower2 = Math.min(shootingPower2 + POWER_CHARGE_RATE, MAX_POWER);
                     updatePowerMeter(player2, powerMeter2, shootingPower2);
@@ -509,17 +509,21 @@
         }
 
         function chipShot(player, direction) {
-            ballHolder = null; // Player no longer holds the ball
+            ballHolder = null; // The player no longer has the ball
 
             let chipDirection = new THREE.Vector3();
             if (direction.length() > 0) {
                 chipDirection.copy(direction).normalize();
             } else {
-                // If player is standing still, chip towards the opponent's goal
-                chipDirection.set(0, 0, -1).applyQuaternion(player.quaternion);
+                // If the player is standing still, determine direction based on which player it is
+                if (player === player1) {
+                    chipDirection.set(-1, 0, 0); // Player 1 (blue) chips towards the left goal
+                } else {
+                    chipDirection.set(1, 0, 0); // Player 2 (red) chips towards the right goal
+                }
             }
             
-            // Give the ball a gentle lift and forward push
+            // Apply a vertical lift and a small forward push to the ball
             ball.velocity.copy(chipDirection).multiplyScalar(CHIP_FORWARD_STRENGTH);
             ball.velocity.y = CHIP_LIFT_STRENGTH;
         }
