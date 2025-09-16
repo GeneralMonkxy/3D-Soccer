@@ -420,13 +420,12 @@
             
             if (key === 'l' || key === 'k') {
                 if (ballHolder === 'player1') {
-                    // On the very first press, record the time and start charging power.
+                    // On the very first press, just record the time.
+                    // Power charging will be handled in the game loop (handleInput).
                     if (!pressedKeys[key]) {
                         p1ShootKeyDownTime = new Date().getTime();
-                        shootingPower1 = 1; // Start with minimum power.
+                        shootingPower1 = 0; // Reset power for the new press.
                     }
-                    shootingPower1 = Math.min(shootingPower1 + POWER_CHARGE_RATE, MAX_POWER);
-                    updatePowerMeter(player1, powerMeter1, shootingPower1);
                 } else if (ballHolder === 'player2' && player1.position.distanceTo(player2.position) < TACKLE_DISTANCE) {
                     ballHolder = 'player1';
                     hidePowerMeter(powerMeter2);
@@ -435,13 +434,11 @@
             
             if (key === 'f' || key === 'g') {
                 if (ballHolder === 'player2') {
-                    // On the very first press, record the time and start charging power.
+                    // On the very first press, just record the time.
                     if (!pressedKeys[key]) {
                         p2ShootKeyDownTime = new Date().getTime();
-                        shootingPower2 = 1; // Start with minimum power.
+                        shootingPower2 = 0; // Reset power for the new press.
                     }
-                    shootingPower2 = Math.min(shootingPower2 + POWER_CHARGE_RATE, MAX_POWER);
-                    updatePowerMeter(player2, powerMeter2, shootingPower2);
                 } else if (ballHolder === 'player1' && player2.position.distanceTo(player1.position) < TACKLE_DISTANCE) {
                     ballHolder = 'player2';
                     hidePowerMeter(powerMeter1);
@@ -577,6 +574,28 @@
             
             const p2Move = player2Direction.clone().normalize().multiplyScalar(PLAYER_SPEED);
             player2.position.add(p2Move);
+
+            // Handle power charging during a hold
+            if (pressedKeys['l'] || pressedKeys['k']) {
+                if (ballHolder === 'player1') {
+                    const pressDuration = new Date().getTime() - p1ShootKeyDownTime;
+                    if (pressDuration > TAP_DURATION) {
+                        // It's a hold, so charge the shot
+                        shootingPower1 = Math.min(shootingPower1 + POWER_CHARGE_RATE, MAX_POWER);
+                        updatePowerMeter(player1, powerMeter1, shootingPower1);
+                    }
+                }
+            }
+            if (pressedKeys['f'] || pressedKeys['g']) {
+                if (ballHolder === 'player2') {
+                    const pressDuration = new Date().getTime() - p2ShootKeyDownTime;
+                    if (pressDuration > TAP_DURATION) {
+                        // It's a hold, so charge the shot
+                        shootingPower2 = Math.min(shootingPower2 + POWER_CHARGE_RATE, MAX_POWER);
+                        updatePowerMeter(player2, powerMeter2, shootingPower2);
+                    }
+                }
+            }
 
             if (player1Direction.length() > 0) {
                 const angle = Math.atan2(player1Direction.x, player1Direction.z);
