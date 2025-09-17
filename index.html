@@ -21,36 +21,42 @@
             flex-direction: column;
         }
 
-        .game-container {
+        .game-wrapper {
             position: relative;
             display: flex;
             flex-direction: column;
             align-items: center;
-            height: 80vh;
-            width: 80vw;
+            height: calc(100vh - 150px);
+            width: 100vw;
+            justify-content: center;
         }
 
         #game-canvas {
             display: block;
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            height: 100%;
-            width: 100%;
+            width: 90vw;
+            max-width: 1200px;
+            height: auto;
+            aspect-ratio: 2 / 1;
         }
 
         .ui-overlay {
             position: absolute;
             top: 20px;
-            width: 100%;
+            left: 20px;
+            right: 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 20px;
             font-size: 1.5rem;
             text-align: center;
             pointer-events: none;
+            box-sizing: border-box;
+            width: calc(100% - 40px);
+            max-width: 1200px;
         }
-        
+
         .ui-element {
             background-color: rgba(0, 0, 0, 0.5);
             padding: 10px 15px;
@@ -95,6 +101,7 @@
             text-align: center;
             font-size: 0.75rem;
             width: 100%;
+            max-width: 1200px;
             box-sizing: border-box;
         }
 
@@ -102,6 +109,8 @@
             display: flex;
             gap: 10px;
             margin-top: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
         }
 
         .controls button {
@@ -116,8 +125,13 @@
             transition: background-color 0.3s;
         }
 
-        .controls button:hover {
+        .controls button:hover:not(:disabled) {
             background-color: rgba(80, 80, 80, 0.7);
+        }
+
+        .controls button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
         }
 
         .power-meter {
@@ -132,6 +146,7 @@
             border-radius: 2.5px;
             overflow: hidden;
             display: none;
+            z-index: 10;
         }
 
         .power-meter-fill {
@@ -139,24 +154,84 @@
             background: linear-gradient(to right, #22c55e, #fde047, #ef4444);
             transition: width 0.1s linear;
         }
+
+        /* Menu Styles */
+        .menu {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            width: 100vw;
+            background-color: #1a202c;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 20;
+            transition: opacity 0.5s ease-in-out;
+            gap: 20px;
+        }
+
+        .menu h1 {
+            font-size: 4rem;
+            margin-bottom: 40px;
+        }
+        
+        .menu button {
+            background-color: #4a5568;
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1.5rem;
+            font-weight: bold;
+            transition: background-color 0.3s;
+            width: 250px;
+        }
+
+        .menu button:hover {
+            background-color: #2d3748;
+        }
+
+        .hidden {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
-    <div class="game-container">
+    <!-- Main Menu -->
+    <div id="main-menu" class="menu">
+        <h1>3D Soccer ⚽</h1>
+        <button id="1player-btn">1 Player</button>
+        <button id="2player-btn">2 Player</button>
+    </div>
+
+    <!-- Difficulty Menu -->
+    <div id="difficulty-menu" class="menu hidden">
+        <h1>Select Difficulty</h1>
+        <button id="easy-btn">Easy</button>
+        <button id="medium-btn">Medium</button>
+        <button id="hard-btn">Hard</button>
+    </div>
+
+    <!-- Game Wrapper -->
+    <div id="game-wrapper" class="game-wrapper hidden">
         <div class="ui-overlay">
             <div id="score-element" class="ui-element">Score: <span id="score-display"></span></div>
             <div id="timer-element" class="ui-element">Time: <span id="timer-display">90</span>s</div>
         </div>
         <canvas id="game-canvas"></canvas>
         <div id="message"></div>
-    </div>
-    <div class="controls">
-        <button id="startButton">Play</button>
-        <button id="restartButton">Restart</button>
-    </div>
-    <div class="instructions">
-        <h3>How to Play</h3>
-        <p>Player 1 (Blue): Arrow Keys to move, L or K to shoot/tackle. Player 2 (Red): WASD to move, F or G to shoot/tackle. Double-tap your shoot button to chip.</p>
+        <div class="controls" id="game-controls">
+            <button id="startButton">Play</button>
+            <button id="restartButton">Restart</button>
+            <button id="menuButton">Menu</button>
+        </div>
+        <div class="instructions" id="game-instructions">
+            <h3>How to Play</h3>
+            <p>Player 1 (Blue): Arrow Keys to move, L to shoot, K to tackle. Player 2 (Red): WASD to move, F to shoot, G to tackle. Double-tap your shoot button to chip.</p>
+        </div>
     </div>
 
     <script>
@@ -168,12 +243,16 @@
         let isGameStarted = false;
         let ballHolder = null;
         let isGoalScored = false;
+        let isSinglePlayerMode = false;
+        let cpuDifficulty = 'easy'; // 'easy', 'medium', 'hard'
+
         const FIELD_WIDTH = 60;
         const FIELD_LENGTH = 30;
         const PLAYER_SPEED = 0.2;
         const BALL_FRICTION = 0.96;
         const DRIBBLING_OFFSET = 1.5;
         const TACKLE_DISTANCE = 2.5;
+        const BOUNDARY_BOUNCE_FACTOR = -0.5;
         let timerInterval;
         let powerMeter1, powerMeter2;
         let shootingPower1 = 0;
@@ -199,6 +278,8 @@
         let goalkeeper1Direction = 1;
         let goalkeeper2Direction = 1;
         
+        let isGameInitialized = false;
+
         // Motion trail variables
         const trailVertices = [];
         const trailMaterial = new THREE.LineBasicMaterial({
@@ -210,23 +291,28 @@
         let trailLine;
 
         window.onload = function () {
-            init();
             setupControls();
-            animate();
-            resizeCanvas();
+            showScreen('main-menu');
         };
 
         function init() {
+            // Check if the game has already been initialized to prevent recreating objects.
+            if (isGameInitialized) return;
+            const canvas = document.getElementById('game-canvas');
+            if (!canvas) {
+                console.error('Canvas element not found!');
+                return;
+            }
+
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x317256);
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
             camera.position.set(0, 25, 25);
             camera.lookAt(0, 0, 0);
 
-            const canvas = document.getElementById('game-canvas');
             renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setSize(canvas.clientWidth, canvas.clientHeight);
             renderer.shadowMap.enabled = true;
 
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -281,17 +367,18 @@
             powerMeter1 = document.createElement('div');
             powerMeter1.className = 'power-meter';
             powerMeter1.innerHTML = '<div class="power-meter-fill"></div>';
-            document.querySelector('.game-container').appendChild(powerMeter1);
+            document.querySelector('.game-wrapper').appendChild(powerMeter1);
 
             powerMeter2 = document.createElement('div');
             powerMeter2.className = 'power-meter';
             powerMeter2.innerHTML = '<div class="power-meter-fill"></div>';
-            document.querySelector('.game-container').appendChild(powerMeter2);
+            document.querySelector('.game-wrapper').appendChild(powerMeter2);
 
             trailLine = new THREE.Line(trailGeometry, trailMaterial);
             scene.add(trailLine);
 
-            updateScoreDisplay();
+            isGameInitialized = true;
+            animate();
         }
 
         function createPlayer(bodyColor, headColor) {
@@ -408,40 +495,92 @@
         }
 
         function setupControls() {
+            document.getElementById('1player-btn').addEventListener('click', () => {
+                isSinglePlayerMode = true;
+                showScreen('difficulty-menu');
+            });
+            document.getElementById('2player-btn').addEventListener('click', () => {
+                isSinglePlayerMode = false;
+                showScreen('game-wrapper');
+            });
+            document.getElementById('easy-btn').addEventListener('click', () => {
+                isSinglePlayerMode = true;
+                cpuDifficulty = 'easy';
+                showScreen('game-wrapper');
+            });
+            document.getElementById('medium-btn').addEventListener('click', () => {
+                isSinglePlayerMode = true;
+                cpuDifficulty = 'medium';
+                showScreen('game-wrapper');
+            });
+            document.getElementById('hard-btn').addEventListener('click', () => {
+                isSinglePlayerMode = true;
+                cpuDifficulty = 'hard';
+                showScreen('game-wrapper');
+            });
             document.getElementById('startButton').addEventListener('click', toggleGame);
             document.getElementById('restartButton').addEventListener('click', restartGame);
+            document.getElementById('menuButton').addEventListener('click', returnToMenu);
             document.addEventListener('keydown', handleKeyDown);
             document.addEventListener('keyup', handleKeyUp);
+        }
+
+        function returnToMenu() {
+            clearInterval(timerInterval);
+            isGameStarted = false;
+            isGameOver = false;
+            blueScore = 0;
+            redScore = 0;
+            timeRemaining = 90;
+            document.getElementById('timer-display').textContent = 90;
+            document.getElementById('startButton').textContent = "Play";
+            document.getElementById('message').textContent = "";
+            updateScoreDisplay();
+            hidePowerMeter(powerMeter1);
+            hidePowerMeter(powerMeter2);
+            showScreen('main-menu');
+        }
+
+        function showScreen(screenId) {
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('difficulty-menu').classList.add('hidden');
+            document.getElementById('game-wrapper').classList.add('hidden');
+
+            const screen = document.getElementById(screenId);
+            if (screen) {
+                screen.classList.remove('hidden');
+            }
+
+            if (screenId === 'game-wrapper' && !isGameInitialized) {
+                init();
+            }
+
+            if (screenId === 'game-wrapper') {
+                restartGame();
+            }
         }
 
         function handleKeyDown(event) {
             if (isGameOver || !isGameStarted || isGoalScored) return;
             const key = event.key.toLowerCase();
             
-            if (key === 'l' || key === 'k') {
+            if (key === 'l') { // Only 'L' key for shooting now
                 if (ballHolder === 'player1') {
-                    // On the very first press, just record the time.
-                    // Power charging will be handled in the game loop (handleInput).
                     if (!pressedKeys[key]) {
                         p1ShootKeyDownTime = new Date().getTime();
-                        shootingPower1 = 0; // Reset power for the new press.
+                        shootingPower1 = 0;
                     }
-                } else if (ballHolder === 'player2' && player1.position.distanceTo(player2.position) < TACKLE_DISTANCE) {
-                    ballHolder = 'player1';
-                    hidePowerMeter(powerMeter2);
                 }
             }
             
-            if (key === 'f' || key === 'g') {
-                if (ballHolder === 'player2') {
-                    // On the very first press, just record the time.
-                    if (!pressedKeys[key]) {
-                        p2ShootKeyDownTime = new Date().getTime();
-                        shootingPower2 = 0; // Reset power for the new press.
+            if (!isSinglePlayerMode) {
+                if (key === 'f') { // Only 'F' key for shooting now
+                    if (ballHolder === 'player2') {
+                        if (!pressedKeys[key]) {
+                            p2ShootKeyDownTime = new Date().getTime();
+                            shootingPower2 = 0;
+                        }
                     }
-                } else if (ballHolder === 'player1' && player2.position.distanceTo(player1.position) < TACKLE_DISTANCE) {
-                    ballHolder = 'player2';
-                    hidePowerMeter(powerMeter1);
                 }
             }
 
@@ -452,32 +591,42 @@
             if (isGameOver || !isGameStarted || isGoalScored) return;
             const key = event.key.toLowerCase();
             
-            if (key === 'l' || key === 'k') {
+            if (key === 'l') {
+                const pressDuration = new Date().getTime() - p1ShootKeyDownTime;
+                
                 if (ballHolder === 'player1') {
-                    const pressDuration = new Date().getTime() - p1ShootKeyDownTime;
-                    
-                    // Check if the key press was a quick tap or a hold.
                     if (pressDuration < TAP_DURATION) {
                         chipShot(player1, lastPlayer1Direction);
                     } else {
                         shootBall(player1, shootingPower1, lastPlayer1Direction);
                     }
-                    shootingPower1 = 0;
-                    hidePowerMeter(powerMeter1);
                 }
+                shootingPower1 = 0;
+                hidePowerMeter(powerMeter1);
             }
-            if (key === 'f' || key === 'g') {
-                if (ballHolder === 'player2') {
+            
+            if (key === 'k') {
+                 tackleBall(player1, ball, 'player1');
+            }
+
+            if (!isSinglePlayerMode) {
+                if (key === 'f') {
                     const pressDuration = new Date().getTime() - p2ShootKeyDownTime;
-                    
-                    // Check for tap vs. hold for Player 2.
-                    if (pressDuration < TAP_DURATION) {
-                        chipShot(player2, lastPlayer2Direction);
-                    } else {
-                        shootBall(player2, shootingPower2, lastPlayer2Direction);
+                    if (ballHolder === 'player2') {
+                        if (pressDuration < TAP_DURATION) {
+                            chipShot(player2, lastPlayer2Direction);
+                        } else {
+                            shootBall(player2, shootingPower2, lastPlayer2Direction);
+                        }
                     }
                     shootingPower2 = 0;
                     hidePowerMeter(powerMeter2);
+                }
+            }
+            
+            if (!isSinglePlayerMode) {
+                if (key === 'g') {
+                    tackleBall(player2, ball, 'player2');
                 }
             }
 
@@ -507,22 +656,30 @@
             ball.curveForce = sideForce;
         }
 
+        function tackleBall(tackler, target, tacklerId) {
+            const distance = tackler.position.distanceTo(target.position);
+            const tackleRadius = 1.5;
+
+            if (distance < tackleRadius) {
+                ballHolder = tacklerId;
+                ball.velocity.set(0, 0, 0);
+            }
+        }
+
         function chipShot(player, direction) {
-            ballHolder = null; // The player no longer has the ball
+            ballHolder = null;
 
             let chipDirection = new THREE.Vector3();
             if (direction.length() > 0) {
                 chipDirection.copy(direction).normalize();
             } else {
-                // If the player is standing still, determine direction based on which player it is
                 if (player === player1) {
-                    chipDirection.set(-1, 0, 0); // Player 1 (blue) chips towards the left goal
+                    chipDirection.set(-1, 0, 0);
                 } else {
-                    chipDirection.set(1, 0, 0); // Player 2 (red) chips towards the right goal
+                    chipDirection.set(1, 0, 0);
                 }
             }
             
-            // Apply a vertical lift and a small forward push to the ball
             ball.velocity.copy(chipDirection).multiplyScalar(CHIP_FORWARD_STRENGTH);
             ball.velocity.y = CHIP_LIFT_STRENGTH;
         }
@@ -534,14 +691,14 @@
             const playerScreenPosition = player.position.clone();
             playerScreenPosition.project(camera);
 
-            const container = document.querySelector('.game-container');
+            const container = document.getElementById('game-canvas');
             const containerRect = container.getBoundingClientRect();
-
+            
             const x = ((playerScreenPosition.x + 1) / 2) * container.clientWidth;
             const y = ((-playerScreenPosition.y + 1) / 2) * container.clientHeight;
 
             meter.style.left = `${x}px`;
-            meter.style.top = `${y - 20}px`;
+            meter.style.top = `${y - 40}px`; // Adjusted to be above the player
         }
 
         function hidePowerMeter(meter) {
@@ -564,10 +721,12 @@
             if (pressedKeys['arrowleft']) player1Direction.x = -1;
             if (pressedKeys['arrowright']) player1Direction.x = 1;
             
-            if (pressedKeys['w']) player2Direction.z = -1;
-            if (pressedKeys['s']) player2Direction.z = 1;
-            if (pressedKeys['a']) player2Direction.x = -1;
-            if (pressedKeys['d']) player2Direction.x = 1;
+            if (!isSinglePlayerMode) {
+                if (pressedKeys['w']) player2Direction.z = -1;
+                if (pressedKeys['s']) player2Direction.z = 1;
+                if (pressedKeys['a']) player2Direction.x = -1;
+                if (pressedKeys['d']) player2Direction.x = 1;
+            }
 
             const p1Move = player1Direction.clone().normalize().multiplyScalar(PLAYER_SPEED);
             player1.position.add(p1Move);
@@ -576,23 +735,23 @@
             player2.position.add(p2Move);
 
             // Handle power charging during a hold
-            if (pressedKeys['l'] || pressedKeys['k']) {
+            if (pressedKeys['l']) {
                 if (ballHolder === 'player1') {
                     const pressDuration = new Date().getTime() - p1ShootKeyDownTime;
                     if (pressDuration > TAP_DURATION) {
-                        // It's a hold, so charge the shot
                         shootingPower1 = Math.min(shootingPower1 + POWER_CHARGE_RATE, MAX_POWER);
                         updatePowerMeter(player1, powerMeter1, shootingPower1);
                     }
                 }
             }
-            if (pressedKeys['f'] || pressedKeys['g']) {
-                if (ballHolder === 'player2') {
-                    const pressDuration = new Date().getTime() - p2ShootKeyDownTime;
-                    if (pressDuration > TAP_DURATION) {
-                        // It's a hold, so charge the shot
-                        shootingPower2 = Math.min(shootingPower2 + POWER_CHARGE_RATE, MAX_POWER);
-                        updatePowerMeter(player2, powerMeter2, shootingPower2);
+            if (!isSinglePlayerMode) {
+                if (pressedKeys['f']) {
+                    if (ballHolder === 'player2') {
+                        const pressDuration = new Date().getTime() - p2ShootKeyDownTime;
+                        if (pressDuration > TAP_DURATION) {
+                            shootingPower2 = Math.min(shootingPower2 + POWER_CHARGE_RATE, MAX_POWER);
+                            updatePowerMeter(player2, powerMeter2, shootingPower2);
+                        }
                     }
                 }
             }
@@ -602,7 +761,7 @@
                 player1.rotation.y = angle;
                 lastPlayer1Direction.copy(player1Direction);
             } else if (ballHolder !== 'player1') {
-                player1.rotation.y = Math.PI / 2;
+                player1.rotation.y = -Math.PI / 2;
                 lastPlayer1Direction.set(-1, 0, 0);
             }
 
@@ -611,10 +770,56 @@
                 player2.rotation.y = angle;
                 lastPlayer2Direction.copy(player2Direction);
             } else if (ballHolder !== 'player2') {
-                player2.rotation.y = -Math.PI / 2;
+                player2.rotation.y = Math.PI / 2;
                 lastPlayer2Direction.set(1, 0, 0);
             }
         }
+
+        function updateCpuAI() {
+            if (!isSinglePlayerMode || isGoalScored || isGameOver) return;
+            const ballPosition = ball.position;
+            const cpuPlayer = player2;
+            const cpuGoalPosition = new THREE.Vector3(FIELD_WIDTH / 2, 0.75, 0);
+
+            // CPU AI logic based on difficulty
+            let cpuSpeedMultiplier = 1;
+            let aggression = 1;
+            if (cpuDifficulty === 'easy') {
+                cpuSpeedMultiplier = 0.8;
+                aggression = 0.5;
+            } else if (cpuDifficulty === 'medium') {
+                cpuSpeedMultiplier = 1.0;
+                aggression = 1.0;
+            } else if (cpuDifficulty === 'hard') {
+                cpuSpeedMultiplier = 1.2;
+                aggression = 1.5;
+            }
+
+            // Simple state machine for CPU
+            if (ballHolder === 'player2') {
+                // State: CPU has the ball, try to score
+                const directionToGoal = cpuGoalPosition.clone().sub(cpuPlayer.position).normalize();
+                player2.position.add(directionToGoal.multiplyScalar(PLAYER_SPEED * cpuSpeedMultiplier));
+
+                // Shoot when close enough
+                if (cpuPlayer.position.distanceTo(cpuGoalPosition) < 20) {
+                    shootBall(player2, MAX_POWER * 0.8, directionToGoal);
+                }
+            } else if (ballHolder === 'player1') {
+                // State: Opponent has the ball, try to tackle
+                const directionToBall = ballPosition.clone().sub(cpuPlayer.position).normalize();
+                player2.position.add(directionToBall.multiplyScalar(PLAYER_SPEED * cpuSpeedMultiplier * aggression));
+            } else {
+                // State: No one has the ball, chase it
+                const directionToBall = ballPosition.clone().sub(cpuPlayer.position).normalize();
+                player2.position.add(directionToBall.multiplyScalar(PLAYER_SPEED * cpuSpeedMultiplier));
+            }
+
+            // Prevent CPU from going out of bounds
+            if (Math.abs(cpuPlayer.position.x) > FIELD_WIDTH / 2 - 0.75) cpuPlayer.position.x = Math.sign(cpuPlayer.position.x) * (FIELD_WIDTH / 2 - 0.75);
+            if (Math.abs(cpuPlayer.position.z) > FIELD_LENGTH / 2 - 0.75) cpuPlayer.position.z = Math.sign(cpuPlayer.position.z) * (FIELD_LENGTH / 2 - 0.75);
+        }
+
 
         function updatePhysics() {
             if (isGameOver || !isGameStarted || isGoalScored) return;
@@ -637,11 +842,9 @@
                 let holderDirection = ballHolder === 'player1' ? player1Direction : player2Direction;
                 let lastHolderDirection = ballHolder === 'player1' ? lastPlayer1Direction : lastPlayer2Direction;
 
-                // Use the correct player's direction for dribbling
                 const dribbleDirection = holderDirection.length() > 0 ? holderDirection : lastHolderDirection;
                 const dribbleOffset = dribbleDirection.clone().normalize().multiplyScalar(DRIBBLING_OFFSET);
                 
-                // Logic to face the goal when holding the ball and not moving
                 if (ballHolder === 'player1' && player1Direction.length() === 0) {
                     player1.rotation.y = -Math.PI / 2;
                 }
@@ -655,8 +858,14 @@
                 
                 trailVertices.length = 0;
                 trailGeometry.setFromPoints([]);
-
-                updatePowerMeter(holderPlayer, holderPlayer === player1 ? powerMeter1 : powerMeter2, holderPlayer === player1 ? shootingPower1 : shootingPower2);
+                
+                if (ballHolder === 'player1') {
+                    updatePowerMeter(player1, powerMeter1, shootingPower1);
+                    hidePowerMeter(powerMeter2);
+                } else if (ballHolder === 'player2') {
+                    updatePowerMeter(player2, powerMeter2, shootingPower2);
+                    hidePowerMeter(powerMeter1);
+                }
             } else {
                 if (ball.curveForce) {
                     ball.velocity.add(ball.curveForce);
@@ -665,6 +874,16 @@
                 ball.velocity.x *= BALL_FRICTION;
                 ball.velocity.z *= BALL_FRICTION;
                 ball.position.add(ball.velocity);
+
+                // Boundary check
+                if (Math.abs(ball.position.x) > FIELD_WIDTH / 2) {
+                    ball.position.x = Math.sign(ball.position.x) * (FIELD_WIDTH / 2);
+                    ball.velocity.x *= BOUNDARY_BOUNCE_FACTOR;
+                }
+                if (Math.abs(ball.position.z) > FIELD_LENGTH / 2) {
+                    ball.position.z = Math.sign(ball.position.z) * (FIELD_LENGTH / 2);
+                    ball.velocity.z *= BOUNDARY_BOUNCE_FACTOR;
+                }
 
                 if (ball.position.y < 0.75) {
                     ball.position.y = 0.75;
@@ -684,10 +903,8 @@
                 const collisionDistance = 1.0 + 0.5;
                 if (player1Distance < collisionDistance) {
                     ballHolder = 'player1';
-                    hidePowerMeter(powerMeter2);
                 } else if (player2Distance < collisionDistance) {
                     ballHolder = 'player2';
-                    hidePowerMeter(powerMeter1);
                 }
             }
             
@@ -703,15 +920,6 @@
                 ball.velocity.x *= -1.5;
                 ball.velocity.z *= -0.5;
                 ball.position.x = goalkeeper2.position.x + Math.sign(ball.position.x - goalkeeper2.position.x) * keeper2CollisionDistance;
-            }
-            
-            if (Math.abs(ball.position.x) > FIELD_WIDTH / 2 - 0.5) {
-                ball.position.x = Math.sign(ball.position.x) * (FIELD_WIDTH / 2 - 0.5);
-                ball.velocity.x *= -0.8;
-            }
-            if (Math.abs(ball.position.z) > FIELD_LENGTH / 2 - 0.5) {
-                ball.position.z = Math.sign(ball.position.z) * (FIELD_LENGTH / 2 - 0.5);
-                ball.velocity.z *= -0.8;
             }
             
             if (Math.abs(player1.position.x) > FIELD_WIDTH / 2 - 0.75) player1.position.x = Math.sign(player1.position.x) * (FIELD_WIDTH / 2 - 0.75);
@@ -775,19 +983,14 @@
 
         function resetBall() {
             pressedKeys = {};
-
             player1.position.set(FIELD_WIDTH / 4, 0.75, 0);
             player2.position.set(-FIELD_WIDTH / 4, 0.75, 0);
-            
             ball.velocity.set(0, 0, 0);
             ball.curveForce = null;
             ballHolder = null;
-            
             ball.position.set(0, 0.75, 0);
-            
             trailVertices.length = 0;
             trailGeometry.setFromPoints(trailVertices);
-            
             document.getElementById('message').textContent = "";
             hidePowerMeter(powerMeter1);
             hidePowerMeter(powerMeter2);
@@ -841,6 +1044,7 @@
 
         function endGame() {
             isGameOver = true;
+            isGameStarted = false;
             clearInterval(timerInterval);
             let message = "";
             if (blueScore > redScore) {
@@ -858,6 +1062,9 @@
             requestAnimationFrame(animate);
             if (isGameStarted && !isGameOver) {
                 handleInput();
+                if (isSinglePlayerMode) {
+                    updateCpuAI();
+                }
                 updatePhysics();
                 checkScoring();
             }
@@ -866,15 +1073,31 @@
 
         function resizeCanvas() {
             const canvas = document.getElementById('game-canvas');
-            camera.aspect = canvas.clientWidth / canvas.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+            const gameWrapper = document.getElementById('game-wrapper');
+            if (canvas && renderer) {
+                const aspectRatio = 2 / 1;
+                let newWidth = gameWrapper.clientWidth;
+                let newHeight = newWidth / aspectRatio;
+
+                if (newHeight > gameWrapper.clientHeight) {
+                    newHeight = gameWrapper.clientHeight;
+                    newWidth = newHeight * aspectRatio;
+                }
+
+                canvas.style.width = `${newWidth}px`;
+                canvas.style.height = `${newHeight}px`;
+
+                camera.aspect = newWidth / newHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(newWidth, newHeight);
+            }
         }
 
         window.addEventListener('resize', resizeCanvas);
     </script>
 </body>
 </html>
+
 
 
 
